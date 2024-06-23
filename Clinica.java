@@ -10,6 +10,9 @@ public class Clinica {
     private Scanner scanner = new Scanner(System.in);
     private DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
+    private final String PACIENTES_CSV = "pacientes.csv";
+    private final String AGENDAMENTOS_CSV = "agendamentos.csv";
+
     public void menuPrincipal() {
         carregarDados();
         while (true) {
@@ -84,24 +87,27 @@ public class Clinica {
         }
 
         Paciente pacienteEscolhido = pacientes.get(escolhaPaciente);
-        System.out.print("Dia da consulta (dd/MM/yyyy): ");
-        String dia = scanner.nextLine();
-        System.out.print("Hora da consulta (HH:mm): ");
-        String hora = scanner.nextLine();
+        LocalDateTime dataHoraConsulta = null;
+        boolean dataValida = false;
+
+        while (!dataValida) {
+            System.out.print("Dia da consulta (dd/MM/yyyy HH:mm): ");
+            String dataHoraStr = scanner.nextLine();
+
+            try {
+                dataHoraConsulta = LocalDateTime.parse(dataHoraStr, formatter);
+                if (dataHoraConsulta.isBefore(LocalDateTime.now())) {
+                    System.out.println("Não é possível agendar consultas retroativas.");
+                } else {
+                    dataValida = true;
+                }
+            } catch (Exception e) {
+                System.out.println("Data ou hora inválida! Tente novamente.");
+            }
+        }
+
         System.out.print("Especialidade desejada: ");
         String especialidade = scanner.nextLine();
-
-        LocalDateTime dataHoraConsulta;
-        try {
-            dataHoraConsulta = LocalDateTime.parse(dia + " " + hora, formatter);
-            if (dataHoraConsulta.isBefore(LocalDateTime.now())) {
-                System.out.println("Não é possível agendar consultas retroativas.");
-                return;
-            }
-        } catch (Exception e) {
-            System.out.println("Data ou hora inválida!");
-            return;
-        }
 
         for (Agendamento agendamento : agendamentos) {
             if (agendamento.getDataHora().equals(dataHoraConsulta)) {
@@ -148,36 +154,54 @@ public class Clinica {
     }
 
     private void salvarDados() {
-        try (ObjectOutputStream oosPacientes = new ObjectOutputStream(new FileOutputStream("pacientes.dat"));
-             ObjectOutputStream oosAgendamentos = new ObjectOutputStream(new FileOutputStream("agendamentos.dat"))) {
-            oosPacientes.writeObject(pacientes);
-            oosAgendamentos.writeObject(agendamentos);
+        try (PrintWriter writerPacientes = new PrintWriter(new FileWriter(PACIENTES_CSV));
+             PrintWriter writerAgendamentos = new PrintWriter(new FileWriter(AGENDAMENTOS_CSV))) {
+
+            for (Paciente paciente : pacientes) {
+                writerPacientes.println(paciente.getNome() + "," + paciente.getTelefone());
+            }
+
+            for (Agendamento agendamento : agendamentos) {
+                writerAgendamentos.println(agendamento.getPaciente().getNome() + "," +
+                        agendamento.getDataHora().format(formatter) + "," + agendamento.getEspecialidade());
+            }
+
+            System.out.println("Dados salvos com sucesso!");
         } catch (IOException e) {
             System.out.println("Erro ao salvar dados: " + e.getMessage());
         }
     }
 
     private void carregarDados() {
-        try (ObjectInputStream oisPacientes = new ObjectInputStream(new FileInputStream("pacientes.dat"));
-             ObjectInputStream oisAgendamentos = new ObjectInputStream(new FileInputStream("agendamentos.dat"))) {
-            pacientes = readPacientes(oisPacientes);
-            agendamentos = readAgendamentos(oisAgendamentos);
+        try (BufferedReader readerPacientes = new BufferedReader(new FileReader(PACIENTES_CSV));
+             BufferedReader readerAgendamentos = new BufferedReader(new FileReader(AGENDAMENTOS_CSV))) {
+
+            String linha;
+            while ((linha = readerPacientes.readLine()) != null) {
+                String[] dados = linha.split(",");
+                pacientes.add(new Paciente(dados[0], dados[1]));
+            }
+
+            while ((linha = readerAgendamentos.readLine()) != null) {
+                String[] dados = linha.split(",");
+                LocalDateTime dataHora = LocalDateTime.parse(dados[1], formatter);
+                agendamentos.add(new Agendamento(buscarPaciente(dados[0]), dataHora, dados[2]));
+            }
+
         } catch (FileNotFoundException e) {
-            pacientes = new ArrayList<>();
-            agendamentos = new ArrayList<>();
-        } catch (IOException | ClassNotFoundException e) {
+            System.out.println("Arquivo não encontrado. Será criado um novo ao salvar os dados.");
+        } catch (IOException e) {
             System.out.println("Erro ao carregar dados: " + e.getMessage());
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private ArrayList<Paciente> readPacientes(ObjectInputStream ois) throws IOException, ClassNotFoundException {
-        return (ArrayList<Paciente>) ois.readObject();
-    }
-
-    @SuppressWarnings("unchecked")
-    private ArrayList<Agendamento> readAgendamentos(ObjectInputStream ois) throws IOException, ClassNotFoundException {
-        return (ArrayList<Agendamento>) ois.readObject();
+    private Paciente buscarPaciente(String nome) {
+        for (Paciente paciente : pacientes) {
+            if (paciente.getNome().equals(nome)) {
+                return paciente;
+            }
+        }
+        return null;
     }
 
     public static void main(String[] args) {
